@@ -27,7 +27,10 @@ def carregar_dados():
 df = carregar_dados()
 hoje = pd.Timestamp.today().normalize()
 proximos_7 = pd.date_range(start=hoje, periods=8, freq='D')
-data_hoje_str = datetime.today().strftime("%d/%m/%Y")
+from zoneinfo import ZoneInfo
+
+data_hoje_str = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
+
 
 # Última modificação do arquivo
 try:
@@ -36,7 +39,6 @@ try:
 except:
     data_modificacao = "--"
 
-st.markdown(f"📅 **Data atual:** {data_hoje_str}")
 st.title("📦 Painel de Entregas")
 
 with st.sidebar:
@@ -143,5 +145,3 @@ else:
 st.markdown("<span style='font-size:13px;'>🟩 Verde = No prazo &nbsp;&nbsp;&nbsp;&nbsp; 🟥 Vermelho = Atrasado</span>", unsafe_allow_html=True)
 
 # Rodapé com última atualização
-st.markdown("<hr style='margin-top:30px; margin-bottom:10px;'>", unsafe_allow_html=True)
-st.markdown(f"<span style='font-size:13px;'>📁 Última atualização da base: <strong>{data_modificacao}</strong></span>", unsafe_allow_html=True)
