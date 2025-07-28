@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import os
+from zoneinfo import ZoneInfo
 
 st.set_page_config(page_title="Painel de Entregas", layout="wide")
 
@@ -16,23 +17,46 @@ st.markdown("""
 
 @st.cache_data
 def carregar_dados():
-    df = pd.read_excel("Atendimento.xlsx", sheet_name="base_dados")
+    caminho = "Atendimento.xlsx"
+    try:
+        df = pd.read_excel(caminho, sheet_name="base_dados")
+    except Exception as e:
+        st.error(f"Erro ao carregar a planilha: {e}")
+        st.stop()
+
     df.columns = df.columns.str.upper()
     df = df.fillna("--")
+
+    colunas_necessarias = ["SC", "SETOR", "REQUISITANTE", "STATUS", "PREVISÃO DE ENTREGA"]
+    for col in colunas_necessarias:
+        if col not in df.columns:
+            st.error(f"Coluna obrigatória ausente: {col}")
+            st.stop()
+
     df["PREVISÃO DE ENTREGA"] = pd.to_datetime(df["PREVISÃO DE ENTREGA"], errors='coerce')
+
     for col in ["SC", "SETOR", "REQUISITANTE", "STATUS"]:
         df[col] = df[col].astype(str).str.strip().str.upper()
+
+    # ✅ Tratamento seguro da coluna PC
+    if "PC" in df.columns:
+        def formatar_pc(valor):
+            try:
+                valor_str = str(valor).strip()
+                if not valor_str or valor_str in ["--", "-", "nan"]:
+                    return "--"
+                return str(int(float(valor_str)))
+            except:
+                return "--"
+        df["PC"] = df["PC"].apply(formatar_pc)
+
     return df
 
 df = carregar_dados()
 hoje = pd.Timestamp.today().normalize()
 proximos_7 = pd.date_range(start=hoje, periods=8, freq='D')
-from zoneinfo import ZoneInfo
-
 data_hoje_str = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
 
-
-# Última modificação do arquivo
 try:
     timestamp_mod = os.path.getmtime("Atendimento.xlsx")
     data_modificacao = datetime.fromtimestamp(timestamp_mod).strftime("%d/%m/%Y %H:%M")
@@ -64,7 +88,7 @@ filtrado["ATRASADO_BOOL"] = (
     (~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO"]))
 )
 filtrado["SITUAÇÃO DA ENTREGA"] = filtrado["ATRASADO_BOOL"].apply(lambda x: "⚠️ Atrasado" if x else "✅ No prazo")
-filtrado_visivel = filtrado[~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO"])]
+filtrado_visivel = filtrado[~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO"])].copy()
 
 if not filtrado.empty:
     total = len(filtrado)
@@ -104,11 +128,10 @@ for col, val, icone, titulo in zip(
             </div>
         """, unsafe_allow_html=True)
 
-# Espaço entre indicadores e filtro de data
 st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
 
-# Tabela
-datas_disponiveis = filtrado_visivel["PREVISÃO DE ENTREGA"].dropna().dt.normalize().drop_duplicates().sort_values()
+filtrado_visivel = filtrado_visivel[filtrado_visivel["PREVISÃO DE ENTREGA"].notna()]
+datas_disponiveis = filtrado_visivel["PREVISÃO DE ENTREGA"].dt.normalize().drop_duplicates().sort_values()
 opcoes_datas = ["Todas"] + datas_disponiveis.dt.strftime("%d/%m/%Y").tolist()
 data_selecionada = st.selectbox("📅 Filtrar por data de entrega:", opcoes_datas, disabled=desabilitar)
 if data_selecionada != "Todas":
@@ -117,7 +140,9 @@ if data_selecionada != "Todas":
 
 colunas = ["REQUISITANTE", "SETOR", "SC", "PC", "RAZAO SOCIAL", "PREVISÃO DE ENTREGA", "SITUAÇÃO DA ENTREGA"]
 df_tabela = filtrado_visivel[colunas].copy()
-df_tabela = df_tabela.rename(columns={
+
+# Renomear colunas com ícones
+df_tabela.rename(columns={
     "REQUISITANTE": "🙋 REQUISITANTE",
     "SETOR": "🏢 SETOR",
     "SC": "🧾 SC",
@@ -125,8 +150,11 @@ df_tabela = df_tabela.rename(columns={
     "RAZAO SOCIAL": "🏭 FORNECEDOR",
     "PREVISÃO DE ENTREGA": "📅 ENTREGA PREVISTA",
     "SITUAÇÃO DA ENTREGA": "📌 SITUAÇÃO DA ENTREGA"
-})
-df_tabela["📅 ENTREGA PREVISTA"] = pd.to_datetime(df_tabela["📅 ENTREGA PREVISTA"], errors='coerce').dt.strftime("%d/%m/%Y")
+}, inplace=True)
+
+# Formatar data
+if "📅 ENTREGA PREVISTA" in df_tabela.columns:
+    df_tabela["📅 ENTREGA PREVISTA"] = pd.to_datetime(df_tabela["📅 ENTREGA PREVISTA"], errors='coerce').dt.strftime("%d/%m/%Y")
 
 def highlight_row(row):
     if "📌 SITUAÇÃO DA ENTREGA" in row:
@@ -144,4 +172,4 @@ else:
 
 st.markdown("<span style='font-size:13px;'>🟩 Verde = No prazo &nbsp;&nbsp;&nbsp;&nbsp; 🟥 Vermelho = Atrasado</span>", unsafe_allow_html=True)
 
-# Rodapé com última atualização
+st.markdown(f"<hr><span style='font-size:12px;'>📁 Base atualizada em: {data_modificacao}</span>", unsafe_allow_html=True)
