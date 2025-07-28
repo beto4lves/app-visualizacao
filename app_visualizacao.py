@@ -24,21 +24,33 @@ def carregar_dados():
         st.error(f"Erro ao carregar a planilha: {e}")
         st.stop()
 
-    df.columns = df.columns.str.upper()
+    df.columns = df.columns.str.strip()
+
+    # Renomear para nomes internos padronizados
+    df.rename(columns={
+        "Previsao de Entrega": "PREVISAO_ENTREGA",
+        "Razao Social": "RAZAO_SOCIAL",
+        "SC": "SC",
+        "PC": "PC",
+        "Setor": "SETOR",
+        "Requisitante": "REQUISITANTE",
+        "Status": "STATUS"
+    }, inplace=True)
+
     df = df.fillna("--")
 
-    colunas_necessarias = ["SC", "SETOR", "REQUISITANTE", "STATUS", "PREVISÃO DE ENTREGA"]
+    colunas_necessarias = ["SC", "SETOR", "REQUISITANTE", "STATUS", "PREVISAO_ENTREGA"]
     for col in colunas_necessarias:
         if col not in df.columns:
-            st.error(f"Coluna obrigatória ausente: {col}")
+            st.error(f"❌ Coluna obrigatória ausente: {col}")
             st.stop()
 
-    df["PREVISÃO DE ENTREGA"] = pd.to_datetime(df["PREVISÃO DE ENTREGA"], errors='coerce')
+    df["PREVISAO_ENTREGA"] = pd.to_datetime(df["PREVISAO_ENTREGA"], errors='coerce')
 
     for col in ["SC", "SETOR", "REQUISITANTE", "STATUS"]:
         df[col] = df[col].astype(str).str.strip().str.upper()
 
-    # ✅ Tratamento seguro da coluna PC
+    # Tratamento seguro da coluna PC
     if "PC" in df.columns:
         def formatar_pc(valor):
             try:
@@ -83,8 +95,8 @@ if filtro_req != "Todos":
 
 filtrado = filtrado[~filtrado["REQUISITANTE"].isin(["", "--", "-"])]
 filtrado["ATRASADO_BOOL"] = (
-    filtrado["PREVISÃO DE ENTREGA"].notna() &
-    (filtrado["PREVISÃO DE ENTREGA"] < hoje) &
+    filtrado["PREVISAO_ENTREGA"].notna() &
+    (filtrado["PREVISAO_ENTREGA"] < hoje) &
     (~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO"]))
 )
 filtrado["SITUAÇÃO DA ENTREGA"] = filtrado["ATRASADO_BOOL"].apply(lambda x: "⚠️ Atrasado" if x else "✅ No prazo")
@@ -95,8 +107,8 @@ if not filtrado.empty:
     final = (filtrado["STATUS"] == "ENTREGUE").sum()
     pend = (filtrado["STATUS"] == "AGUARDANDO ENTREGA").sum()
     atras = filtrado["ATRASADO_BOOL"].sum()
-    hoje_qtd = (filtrado["PREVISÃO DE ENTREGA"] == hoje).sum()
-    prox_qtd = filtrado["PREVISÃO DE ENTREGA"].isin(proximos_7).sum()
+    hoje_qtd = (filtrado["PREVISAO_ENTREGA"] == hoje).sum()
+    prox_qtd = filtrado["PREVISAO_ENTREGA"].isin(proximos_7).sum()
 else:
     total = final = pend = atras = hoje_qtd = prox_qtd = 0
 
@@ -130,29 +142,27 @@ for col, val, icone, titulo in zip(
 
 st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
 
-filtrado_visivel = filtrado_visivel[filtrado_visivel["PREVISÃO DE ENTREGA"].notna()]
-datas_disponiveis = filtrado_visivel["PREVISÃO DE ENTREGA"].dt.normalize().drop_duplicates().sort_values()
+filtrado_visivel = filtrado_visivel[filtrado_visivel["PREVISAO_ENTREGA"].notna()]
+datas_disponiveis = filtrado_visivel["PREVISAO_ENTREGA"].dt.normalize().drop_duplicates().sort_values()
 opcoes_datas = ["Todas"] + datas_disponiveis.dt.strftime("%d/%m/%Y").tolist()
 data_selecionada = st.selectbox("📅 Filtrar por data de entrega:", opcoes_datas, disabled=desabilitar)
 if data_selecionada != "Todas":
     data_dt = datetime.strptime(data_selecionada, "%d/%m/%Y").date()
-    filtrado_visivel = filtrado_visivel[filtrado_visivel["PREVISÃO DE ENTREGA"].dt.date == data_dt]
+    filtrado_visivel = filtrado_visivel[filtrado_visivel["PREVISAO_ENTREGA"].dt.date == data_dt]
 
-colunas = ["REQUISITANTE", "SETOR", "SC", "PC", "RAZAO SOCIAL", "PREVISÃO DE ENTREGA", "SITUAÇÃO DA ENTREGA"]
+colunas = ["REQUISITANTE", "SETOR", "SC", "PC", "RAZAO_SOCIAL", "PREVISAO_ENTREGA", "SITUAÇÃO DA ENTREGA"]
 df_tabela = filtrado_visivel[colunas].copy()
 
-# Renomear colunas com ícones
 df_tabela.rename(columns={
     "REQUISITANTE": "🙋 REQUISITANTE",
     "SETOR": "🏢 SETOR",
     "SC": "🧾 SC",
     "PC": "📄 PC",
-    "RAZAO SOCIAL": "🏭 FORNECEDOR",
-    "PREVISÃO DE ENTREGA": "📅 ENTREGA PREVISTA",
+    "RAZAO_SOCIAL": "🏭 FORNECEDOR",
+    "PREVISAO_ENTREGA": "📅 ENTREGA PREVISTA",
     "SITUAÇÃO DA ENTREGA": "📌 SITUAÇÃO DA ENTREGA"
 }, inplace=True)
 
-# Formatar data
 if "📅 ENTREGA PREVISTA" in df_tabela.columns:
     df_tabela["📅 ENTREGA PREVISTA"] = pd.to_datetime(df_tabela["📅 ENTREGA PREVISTA"], errors='coerce').dt.strftime("%d/%m/%Y")
 
@@ -171,5 +181,4 @@ else:
     st.dataframe(df_tabela.style.apply(highlight_row, axis=1), use_container_width=True)
 
 st.markdown("<span style='font-size:13px;'>🟩 Verde = No prazo &nbsp;&nbsp;&nbsp;&nbsp; 🟥 Vermelho = Atrasado</span>", unsafe_allow_html=True)
-
 st.markdown(f"<hr><span style='font-size:12px;'>📁 Base atualizada em: {data_modificacao}</span>", unsafe_allow_html=True)
