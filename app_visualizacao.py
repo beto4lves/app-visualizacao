@@ -66,6 +66,13 @@ def carregar_dados():
 
 df = carregar_dados()
 hoje = pd.Timestamp.today().normalize()
+# Calcula atraso global (pendência/atraso) para filtrar Departamentos
+df["_ATRASADO_GLOBAL"] = (
+    df.get("PREVISAO_ENTREGA").notna()
+    & (df["PREVISAO_ENTREGA"] < hoje)
+    & (~df["STATUS"].isin(["ENTREGUE", "FINALIZADO", "AJUSTE"]))
+)
+
 proximos_7 = pd.date_range(start=hoje, periods=8, freq='D')
 data_hoje_str = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y")
 
@@ -81,10 +88,32 @@ with st.sidebar:
     st.markdown("### 🎛️ Filtros", unsafe_allow_html=True)
     filtro_sc = st.text_input("Número da SC:")
     desabilitar = bool(filtro_sc.strip())
-    filtro_setor = st.selectbox("Departamento", ["Todos"] + sorted(df["SETOR"].unique()), disabled=desabilitar)
+    # Lista apenas setores com pendência (AGUARDANDO ENTREGA) ou atraso
+    _setores_base = df.loc[
+        (df["STATUS"] == "AGUARDANDO ENTREGA") | (df.get("_ATRASADO_GLOBAL", False)),
+        "SETOR"
+    ].dropna()
+    _setores_base = [s for s in _setores_base.unique() if s not in ["", "--", "-"]]
+    _opcoes_setor = ["Todos"] + sorted(_setores_base)
+    try:
+        _label_setor = "Departamento"
+        filtro_setor = st.selectbox(_label_setor, _opcoes_setor, disabled=desabilitar)
+    except Exception:
+        # Fallback em caso de variáveis diferentes
+        filtro_setor = st.selectbox("Departamento", _opcoes_setor, disabled=desabilitar)
     opcoes_req = [r for r in df["REQUISITANTE"].unique() if r not in ["", "--", "-"]]
-    filtro_req = st.selectbox("Solicitante", ["Todos"] + sorted(opcoes_req), disabled=desabilitar)
-
+    # Lista apenas requisitantes com pendência (AGUARDANDO ENTREGA) ou atraso
+    _req_base = df.loc[
+        (df["STATUS"] == "AGUARDANDO ENTREGA") | (df.get("_ATRASADO_GLOBAL", False)),
+        "REQUISITANTE"
+    ].dropna()
+    _req_base = [r for r in _req_base.unique() if r not in ["", "--", "-", " - ", "—"]]
+    _opcoes_req = ["Todos"] + sorted(_req_base)
+    try:
+        _label_req = "Solicitante"
+        filtro_req = st.selectbox(_label_req, _opcoes_req, disabled=desabilitar)
+    except Exception:
+        filtro_req = st.selectbox("Solicitante", _opcoes_req, disabled=desabilitar)
 filtrado = df.copy()
 if filtro_sc:
     filtrado = filtrado[filtrado["SC"].str.contains(filtro_sc, case=False)]
@@ -97,10 +126,10 @@ filtrado = filtrado[~filtrado["REQUISITANTE"].isin(["", "--", "-"])]
 filtrado["ATRASADO_BOOL"] = (
     filtrado["PREVISAO_ENTREGA"].notna() &
     (filtrado["PREVISAO_ENTREGA"] < hoje) &
-    (~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO"]))
+    (~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO", "AJUSTE"]))
 )
 filtrado["SITUAÇÃO DA ENTREGA"] = filtrado["ATRASADO_BOOL"].apply(lambda x: "⚠️ Atrasado" if x else "✅ No prazo")
-filtrado_visivel = filtrado[~filtrado["STATUS"].isin(["ENTREGUE", "FINALIZADO"])].copy()
+filtrado_visivel = filtrado[filtrado["STATUS"] == "AGUARDANDO ENTREGA"].copy()
 
 if not filtrado.empty:
     total = len(filtrado)
